@@ -11,8 +11,11 @@ use serde_json::Value;
 pub struct Config {
     /// This machine's name in the index; defaults to the short hostname.
     pub machine: Option<String>,
-    /// Machines to pull sessions from. Defaults to every enabled saved Herdr
-    /// machine; on a peer of a hub, set it to just the hub.
+    /// An always-on machine that keeps everyone's sessions. When set, sync
+    /// pushes this machine's sessions there and pulls the rest from it.
+    pub hub: Option<String>,
+    /// Machines to pull sessions from. Defaults to the hub, or else every
+    /// enabled saved Herdr machine.
     pub sources: Option<Vec<String>>,
     /// Command that wakes a sleeping machine; `{machine}` is replaced by its
     /// name. Defaults to `herdr-sleep wake {machine}` when that is installed.
@@ -141,23 +144,36 @@ impl Config {
         out
     }
 
+    fn find(&self, all: &[Reach], name: &str) -> Reach {
+        all.iter()
+            .find(|r| r.name == name)
+            .cloned()
+            .unwrap_or(Reach {
+                name: name.to_owned(),
+                target: name.to_owned(),
+                herdr: None,
+            })
+    }
+
     pub fn sources(&self) -> Vec<Reach> {
         let me = self.me();
         let all = self.reachable();
-        match &self.sources {
-            Some(names) => names
+        match (&self.sources, &self.hub) {
+            (Some(names), _) => names
                 .iter()
                 .filter(|n| **n != me)
-                .map(|n| {
-                    all.iter().find(|r| &r.name == n).cloned().unwrap_or(Reach {
-                        name: n.clone(),
-                        target: n.clone(),
-                        herdr: None,
-                    })
-                })
+                .map(|n| self.find(&all, n))
                 .collect(),
-            None => all.into_iter().filter(|r| r.name != me).collect(),
+            (None, Some(hub)) if *hub != me => vec![self.find(&all, hub)],
+            (None, Some(_)) => Vec::new(),
+            (None, None) => all.into_iter().filter(|r| r.name != me).collect(),
         }
+    }
+
+    /// The hub to push to, unless this is the hub.
+    pub fn push_to(&self) -> Option<Reach> {
+        let hub = self.hub.as_ref().filter(|h| **h != self.me())?;
+        Some(self.find(&self.reachable(), hub))
     }
 
     pub fn wake_command(&self, machine: &str) -> Option<String> {
@@ -179,7 +195,7 @@ mod tests {
     fn parses_a_peer_config() {
         let c: Config = toml::from_str(
             r#"
-sources = ["heimdall"]
+hub = "heimdall"
 wake = "wake {machine}"
 remote = "machine"
 [machines.thor]
@@ -188,6 +204,7 @@ target = "me@thor.lan"
         )
         .unwrap();
         assert_eq!(c.remote, Remote::Machine);
+        assert_eq!(c.hub.as_deref(), Some("heimdall"));
         assert_eq!(c.wake_command("thor").unwrap(), "wake 'thor'");
         assert_eq!(c.machines["thor"].target.as_deref(), Some("me@thor.lan"));
     }

@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
@@ -62,6 +62,55 @@ pub fn pull(ix: &mut Index, cfg: &Config, me: &str, source: &Reach) -> Result<us
     let (n, last) = result?;
     if last > 0 {
         ix.set_synced(&source.name, last)?;
+    }
+    Ok(n)
+}
+
+/// Sends this machine's sessions indexed since the last push to `hub`.
+/// Returns how many were sent.
+pub fn push(ix: &Index, cfg: &Config, me: &str, hub: &Reach) -> Result<usize> {
+    let key = format!("push:{}", hub.name);
+    let since = ix.synced(&key)?;
+    let line = format!("{} import", quote(cfg.remote_bin()));
+    let mut child = ssh(&hub.target)
+        .arg(line)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("running ssh")?;
+    let (mut n, mut last) = (0, 0);
+    let sent = {
+        let mut input = BufWriter::new(child.stdin.take().context("ssh stdin")?);
+        let r = ix.export(since, |r| {
+            if r.machine == me {
+                last = last.max(r.indexed);
+                n += 1;
+                serde_json::to_writer(&mut input, &r)?;
+                input.write_all(b"\n")?;
+            }
+            Ok(())
+        });
+        r.and_then(|_| Ok(input.flush()?))
+    };
+    let mut err = String::new();
+    if let Some(mut e) = child.stderr.take() {
+        let _ = e.read_to_string(&mut err);
+    }
+    let status = child.wait()?;
+    if !status.success() {
+        match status.code() {
+            Some(255) => bail!("offline"),
+            Some(127) => bail!("{} is not installed there", cfg.remote_bin()),
+            _ => bail!(
+                "import failed: {}",
+                err.trim().lines().last().unwrap_or("no output")
+            ),
+        }
+    }
+    sent?;
+    if last > 0 {
+        ix.set_synced(&key, last)?;
     }
     Ok(n)
 }

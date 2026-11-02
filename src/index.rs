@@ -166,11 +166,11 @@ impl Index {
         Ok(changed)
     }
 
-    /// Every session indexed after `since`, with its messages.
+    /// Every session indexed at or after `since`, with its messages.
     pub fn export(&self, since: i64, mut emit: impl FnMut(Record) -> Result<()>) -> Result<()> {
         let mut q = self.db.prepare(
             "SELECT rowid, machine, agent, id, cwd, title, started, updated, indexed
-             FROM sessions WHERE indexed > ?1 ORDER BY indexed",
+             FROM sessions WHERE indexed >= ?1 ORDER BY indexed",
         )?;
         let mut msgs = self.db.prepare(
             "SELECT role, ts, text FROM messages WHERE session = ?1 AND role != 'title' ORDER BY rowid",

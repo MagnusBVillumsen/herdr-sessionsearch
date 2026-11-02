@@ -19,8 +19,8 @@ next to you, on the machine it belongs to.
   with SQLite FTS5. Every word must match, as a prefix. `m:odin` and
   `a:codex` filter by machine and agent. An empty search lists the latest
   sessions.
-- **Every machine**, clearly labelled. Each machine indexes its own logs;
-  machines pull each other's index over SSH. A machine that is asleep or
+- **Every machine**, clearly labelled. Each machine indexes its own logs and
+  syncs over SSH, directly or through a hub. A machine that is asleep or
   offline is skipped, and its sessions stay searchable from the last pull.
 - **Resume where it lives.** Enter splits the pane you came from and runs
   `claude --resume`, `codex resume` or `pi --session` in the session's
@@ -74,22 +74,19 @@ With no config, each machine pulls from every enabled saved Herdr machine
 (`herdr machine list`) when the popup opens. That works when the machines
 you search from can reach the others.
 
-When some machines sleep, use a **hub**: an always-on machine that pulls from
-all of them on a timer, so their sessions are there while they sleep. Point
-the other machines at the hub:
+When some machines sleep, use a **hub**: an always-on machine that keeps
+everyone's sessions. Every other machine pushes its own sessions to the hub
+and pulls the rest from it, so the hub needs no SSH access to them, and a
+sleeping machine's sessions are there from its last push:
 
 ```toml
-# ~/.config/herdr-sessionsearch/config.toml on the hub
-sources = ["thor", "odin", "loke"]
+# ~/.config/herdr-sessionsearch/config.toml on every machine but the hub
+hub = "heimdall"
 ```
 
-```toml
-# on every other machine
-sources = ["heimdall"]
-```
-
-and run `herdr-sessionsearch sync` on the hub regularly, for example with a
-systemd user timer:
+The hub needs no config. Opening the popup syncs; to keep the hub current
+while you are not searching, run `herdr-sessionsearch sync` on a timer on
+each machine, for example as a systemd user timer:
 
 ```ini
 # ~/.config/systemd/user/herdr-sessionsearch.service
@@ -100,14 +97,14 @@ ExecStart=%h/.cargo/bin/herdr-sessionsearch sync
 # ~/.config/systemd/user/herdr-sessionsearch.timer
 [Timer]
 OnBootSec=2m
-OnUnitActiveSec=10m
+OnUnitActiveSec=15m
 
 [Install]
 WantedBy=timers.target
 ```
 
-Sync is incremental: each pull asks only for what the source indexed since
-the last pull. A machine never imports its own sessions back; its logs are
+Sync is incremental: each push and pull sends only what was indexed since
+the last one. A machine never imports its own sessions back; its logs are
 the truth about them. Deleted sessions are dropped locally but not on the
 machines that already pulled them.
 
@@ -115,7 +112,9 @@ All settings:
 
 ```toml
 machine = "thor"            # this machine's name (default: short hostname)
-sources = ["heimdall"]      # where to pull from (default: saved Herdr machines)
+hub = "heimdall"            # push here and pull from here
+sources = ["odin"]          # pull from these instead (default: the hub, or
+                            # else every saved Herdr machine)
 wake = "herdr-sleep wake {machine}"  # default when herdr-sleep is installed
 remote = "split"            # or "machine": open remote sessions in that machine's Herdr
 remote_bin = "herdr-sessionsearch"   # the binary on other machines
@@ -135,9 +134,9 @@ SSH runs with `BatchMode=yes`, so keys or an agent must be set up for it.
 | `herdr-sessionsearch` | the popup |
 | `herdr-sessionsearch search WORDS` | print matches |
 | `herdr-sessionsearch index` | index this machine's logs |
-| `herdr-sessionsearch sync` | index, then pull from every source |
+| `herdr-sessionsearch sync` | index, push to the hub, pull from every source |
 | `herdr-sessionsearch export [--since N]` | JSON lines of sessions indexed after `N` (what sync calls over SSH) |
-| `herdr-sessionsearch import` | read those JSON lines from stdin, e.g. to push instead of pull |
+| `herdr-sessionsearch import` | read those JSON lines from stdin (what a push calls over SSH) |
 
 The index lives in `$XDG_DATA_HOME/herdr-sessionsearch/index.db`.
 

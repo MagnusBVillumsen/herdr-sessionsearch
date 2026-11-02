@@ -26,7 +26,7 @@ Usage:
   herdr-sessionsearch                 open the search popup
   herdr-sessionsearch search WORDS    print matching sessions
   herdr-sessionsearch index           index this machine's sessions
-  herdr-sessionsearch sync            index, then pull from the sources
+  herdr-sessionsearch sync            index, push to the hub, pull from the sources
   herdr-sessionsearch export [--since N]
                                       print sessions as JSON lines (for sync)
   herdr-sessionsearch import          read JSON lines from stdin
@@ -138,7 +138,15 @@ fn refresh(
     let n = Index::open()?.scan(me)?;
     indexed(n);
     let sources = cfg.sources();
+    let hub = cfg.push_to();
     thread::scope(|s| {
+        if let Some(hub) = &hub {
+            let report = &report;
+            s.spawn(move || {
+                let r = Index::open().and_then(|ix| sync::push(&ix, cfg, me, hub));
+                report(&format!("→{}", hub.name), r);
+            });
+        }
         for src in &sources {
             let report = &report;
             s.spawn(move || {
@@ -224,6 +232,9 @@ fn draw(out: &mut impl Write, ui: &mut Ui, state: &State, total: i64) -> Result<
         status.push((Color::DarkGrey, " · indexing…".into()));
     }
     for (name, r) in &state.sources {
+        if name.starts_with('→') && !matches!(r, Some(Err(e)) if e != "offline") {
+            continue;
+        }
         let (c, s) = match r {
             None => (Color::DarkGrey, format!(" · {name} …")),
             Some(Ok(_)) => (Color::Green, format!(" · {name} ✓")),
@@ -320,7 +331,12 @@ fn tui(cfg: Config) -> Result<()> {
     let ix = Index::open()?;
     let cfg = Arc::new(cfg);
     let state = Arc::new(Mutex::new(State {
-        sources: cfg.sources().into_iter().map(|s| (s.name, None)).collect(),
+        sources: cfg
+            .sources()
+            .into_iter()
+            .map(|s| (s.name, None))
+            .chain(cfg.push_to().map(|h| (format!("→{}", h.name), None)))
+            .collect(),
         ..State::default()
     }));
     {
