@@ -1,0 +1,16 @@
+[package]
+name = "herdr-sessionsearch"
+version = "0.1.0"
+edition = "2024"
+description = "Search Claude Code, Codex and pi sessions on all your machines from a Herdr popup, and resume one"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/MagnusBVillumsen/herdr-sessionsearch"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+crossterm = "0.28"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"

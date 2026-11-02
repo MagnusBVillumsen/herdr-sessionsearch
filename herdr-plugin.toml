@@ -1,0 +1,22 @@
+id = "herdr-sessionsearch"
+name = "Session search"
+version = "0.1.0"
+min_herdr_version = "0.9.5"
+description = "Search Claude Code, Codex and pi sessions on all your machines and resume one in a split"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["cargo", "build", "--release", "--locked"]
+
+[[actions]]
+id = "open"
+title = "Search sessions"
+command = ["herdr", "plugin", "pane", "open", "--plugin", "herdr-sessionsearch", "--entrypoint", "search"]
+
+[[panes]]
+id = "search"
+title = "Sessions"
+placement = "popup"
+width = 130
+height = 34
+command = ["target/release/herdr-sessionsearch"]
