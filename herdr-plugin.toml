@@ -8,6 +8,14 @@ platforms = ["linux", "macos"]
 [[build]]
 command = ["cargo", "build", "--release", "--locked"]
 
+# Push new sessions to the hub when Herdr starts and whenever an agent stops.
+[[startup]]
+command = ["target/release/herdr-sessionsearch", "sync"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["target/release/herdr-sessionsearch", "sync"]
+
 [[actions]]
 id = "open"
 title = "Search sessions"

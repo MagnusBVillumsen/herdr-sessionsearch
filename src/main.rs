@@ -455,6 +455,40 @@ fn tui(cfg: Config) -> Result<()> {
     Ok(())
 }
 
+/// Run from Herdr's `pane.agent_status_changed` hook: only sync once the
+/// agent has stopped, when its session has something new to share.
+fn agent_still_working() -> bool {
+    if std::env::var("HERDR_PLUGIN_EVENT").as_deref() != Ok("pane.agent_status_changed") {
+        return false;
+    }
+    fn status(v: &serde_json::Value) -> Option<&str> {
+        match v {
+            serde_json::Value::Object(m) => m
+                .get("agent_status")
+                .and_then(|s| s.as_str())
+                .or_else(|| m.values().find_map(status)),
+            _ => None,
+        }
+    }
+    std::env::var("HERDR_PLUGIN_EVENT_JSON")
+        .ok()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .is_some_and(|v| status(&v) == Some("working"))
+}
+
+/// Held while syncing, so the hooks of several agents finishing together
+/// do not all sync at once.
+fn sync_lock() -> Result<Option<std::fs::File>> {
+    let dir = config::dir("XDG_DATA_HOME", ".local/share").join("herdr-sessionsearch");
+    std::fs::create_dir_all(&dir)?;
+    let file = std::fs::File::create(dir.join("sync.lock"))?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(e)) => Err(e.into()),
+    }
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cfg = Config::load()?;
@@ -471,6 +505,13 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some("sync") => {
+            if agent_still_working() {
+                return Ok(());
+            }
+            let Some(_lock) = sync_lock()? else {
+                eprintln!("another sync is running");
+                return Ok(());
+            };
             let n = refresh(
                 &cfg,
                 &me,

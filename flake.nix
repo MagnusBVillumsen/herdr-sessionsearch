@@ -21,6 +21,14 @@
           version = "0.1.0";
           src = pkgs.lib.cleanSource ./.;
           cargoLock.lockFile = ./Cargo.lock;
+          # A plugin directory for `herdr plugin link`, with the binary where
+          # the manifest expects the build output.
+          postInstall = ''
+            plugin=$out/share/herdr-sessionsearch/plugin
+            mkdir -p $plugin/target/release
+            sed '/^\[\[build\]\]/,/^$/d' herdr-plugin.toml > $plugin/herdr-plugin.toml
+            ln -s $out/bin/herdr-sessionsearch $plugin/target/release/herdr-sessionsearch
+          '';
         };
         packages.default = packages.herdr-sessionsearch;
 

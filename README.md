@@ -40,11 +40,14 @@ Logs are read from `~/.claude/projects`, `~/.codex/sessions` and
 Install it on every machine whose sessions you want to find, so the others
 can pull from it.
 
-As a Herdr plugin:
+As a Herdr plugin, which also keeps the index in sync (see below):
 
 ```sh
 herdr plugin install MagnusBVillumsen/herdr-sessionsearch
 ```
+
+The Nix package ships a ready plugin directory without a build step:
+`herdr plugin link $(nix build --print-out-paths github:MagnusBVillumsen/herdr-sessionsearch)/share/herdr-sessionsearch/plugin`.
 
 and bind a key in `~/.config/herdr/config.toml`:
 
@@ -84,24 +87,11 @@ sleeping machine's sessions are there from its last push:
 hub = "heimdall"
 ```
 
-The hub needs no config. Opening the popup syncs; to keep the hub current
-while you are not searching, run `herdr-sessionsearch sync` on a timer on
-each machine, for example as a systemd user timer:
-
-```ini
-# ~/.config/systemd/user/herdr-sessionsearch.service
-[Service]
-Type=oneshot
-ExecStart=%h/.cargo/bin/herdr-sessionsearch sync
-
-# ~/.config/systemd/user/herdr-sessionsearch.timer
-[Timer]
-OnBootSec=2m
-OnUnitActiveSec=15m
-
-[Install]
-WantedBy=timers.target
-```
+The hub needs no config. As a Herdr plugin, a machine syncs when Herdr
+starts and every time one of its agents stops working, so a finished session
+reaches the hub right away; opening the popup syncs too. Without the plugin
+(binary plus a `popup` keybinding), run `herdr-sessionsearch sync` from cron
+or a timer instead. Only one sync runs at a time.
 
 Sync is incremental: each push and pull sends only what was indexed since
 the last one. A machine never imports its own sessions back; its logs are
